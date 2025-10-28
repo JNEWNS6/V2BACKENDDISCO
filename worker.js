@@ -1,1 +1,4 @@
-import './queue.js'; console.log('BullMQ workers started');
+import './queue.js';
+import './workerScheduler.js';
+
+console.log('BullMQ workers and scraper scheduler started');
