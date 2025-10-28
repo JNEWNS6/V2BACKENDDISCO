@@ -1,0 +1,1 @@
+import './queue.js'; console.log('BullMQ workers started');

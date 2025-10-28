@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: disco-worker }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: disco-worker } }
+  template:
+    metadata: { labels: { app: disco-worker } }
+    spec:
+      containers:
+      - name: worker
+        image: your-dockerhub/disco-backend:latest
+        command: ["node","server/worker.js"]
+        env:
+        - name: DATABASE_URL
+          valueFrom: { secretKeyRef: { name: disco-secrets, key: DATABASE_URL } }
+        - name: REDIS_URL
+          valueFrom: { secretKeyRef: { name: disco-secrets, key: REDIS_URL } }
