@@ -1,0 +1,71 @@
+services:
+  - type: web
+    name: disco-backend
+    env: node
+    plan: starter
+    buildCommand: ./render-build.sh
+    startCommand: node server.js
+    postDeployCommand: npm run migrate
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: START_QUEUE_IN_WEB
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: disco-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: disco-redis
+          type: redis
+          property: connectionString
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_SUCCESS_URL
+        value: https://example.com/thanks?offer={OFFER_ID}
+      - key: STRIPE_CANCEL_URL
+        value: https://example.com/cancel?offer={OFFER_ID}
+      - key: PYTHON_BIN
+        value: python3
+  - type: worker
+    name: disco-scraper
+    env: node
+    plan: starter
+    buildCommand: ./render-build.sh
+    startCommand: node worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: disco-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: disco-redis
+          type: redis
+          property: connectionString
+      - key: PYTHON_BIN
+        value: python3
+      - key: ALLOWLIST_DOMAINS
+        sync: false
+      - key: SCRAPE_LIMIT
+        sync: false
+      - key: SCRAPE_DELAY_MS
+        sync: false
+
+# Managed services
+# See https://render.com/docs/blueprint-spec for the available plan names.
+databases:
+  - name: disco-db
+    plan: starter
+redis:
+  - name: disco-redis
+    plan: starter

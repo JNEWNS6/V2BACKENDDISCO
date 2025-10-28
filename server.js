@@ -7,7 +7,9 @@ import eventsRouter from './eventsRouter.js';
 import adminRouter, { requireAdmin } from './adminRouter.js';
 import paymentsRouter from './paymentsRouter.js';
 import publicCodesRouter from './publicCodesRouter.js';
-import './queue.js'; // comment this if you run workers separately
+if (process.env.START_QUEUE_IN_WEB !== 'false') {
+  await import('./queue.js');
+}
 
 const app = express();
 
