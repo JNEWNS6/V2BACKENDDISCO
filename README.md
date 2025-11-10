@@ -9,7 +9,16 @@ FastAPI backend with **server-side scraping** and **adapter-aware** suggestions.
 - `POST /suggest` — seeds + successes + live scraping
 - `POST /rank` — scores codes (success, recency, avg saved, priors)
 - `POST /seed` — add seed codes (Bearer `DISCO_API_KEY`)
-- `POST /event` — log attempts
+- `POST /event` — log attempts (hashed anon IDs, opt-out aware)
+
+## Promo intelligence API (Node)
+The bundled Express service (`server.js`) mirrors these core capabilities for the production stack:
+
+- `POST /suggest` returns deduplicated codes with source metadata by merging recent successes, live scraping results, and seeded catalogs per domain.
+- `POST /rank` delegates to the Python ranking pipeline to return machine-learned scores and feature metadata for each candidate code.
+- `POST /event` ingests checkout telemetry with hashed anonymous IDs, currency rounding, retention pruning, and opt-out controls. Events feed ranking/training jobs while honoring privacy commitments.
+
+Set `CODE_EVENT_RETENTION_DAYS` to tune how long outcome telemetry is retained (default 180 days). All endpoints normalize domains (lowercase, strip protocol/`www.`) so the extension can call them with retailer URLs directly.
 
 ## Quickstart
 ```bash
@@ -27,7 +36,8 @@ docker run -p 8000:8000 --env-file .env -v $PWD/disco.db:/app/disco.db disco-bac
 
 ## Render deployment
 
-The repo ships with a [Render Blueprint](https://render.com/docs/blueprint-spec) so you can spin up the full stack (web service, background scraper, Postgres, and Redis) with one click.
+The repo ships with a [Render Blueprint](https://render.com/docs/blueprint-spec) so you can spin up the full stack (web service,
+ background scraper, Postgres, and Redis) with one click.
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/OneClickDeploys/V2BACKENDDISCO)
 

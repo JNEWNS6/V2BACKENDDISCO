@@ -21,6 +21,7 @@ class CodeAttempt(Base):
     before_total = Column(Float, nullable=True)
     after_total = Column(Float, nullable=True)
     user_agent = Column(String, nullable=True)
+    anon_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (Index("ix_attempt_domain_code_time", "domain", "code", "created_at"),)
 

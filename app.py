@@ -1,13 +1,16 @@
-import os, json
-from fastapi import FastAPI, Depends, Header
+import os, json, hashlib
+from datetime import datetime, timedelta
+from typing import Optional
+from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
 from db import Base, engine, get_db
 from models import CodeSeed, CodeAttempt, ScrapeCache
 from schemas import (HealthResponse, SuggestRequest, SuggestResponse, RankRequest, RankResponse, RankedCode,
-                     SeedRequest, EventRequest, ScrapeRequest, ScrapeResponse, AdaptersResponse)
+                    SeedRequest, EventRequest, ScrapeRequest, ScrapeResponse, AdaptersResponse)
 from ranking import rank_codes
 from scraper import scrape_pipeline
 from auth import require_api_key
@@ -30,22 +33,61 @@ Base.metadata.create_all(bind=engine)
 with open(os.path.join(os.path.dirname(__file__), "adapters.json"), "r") as f:
     ADAPTERS = json.load(f)
 
+RETENTION_DAYS = int(os.getenv("CODE_EVENT_RETENTION_DAYS", "180") or 0)
+_last_prune = 0.0
+
+
+def _normalize_domain(domain: str) -> str:
+    return (domain or "").strip().lower().replace("http://", "").replace("https://", "").replace("www.", "")
+
+
+def _round_currency(value):
+    if value is None:
+        return None
+    try:
+        return round(float(value), 2)
+    except (ValueError, TypeError):
+        return None
+
+
+def _hash_anon(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    return hashlib.sha256(value.strip().encode("utf-8")).hexdigest()
+
+
+def prune_old_attempts(db: Session):
+    global _last_prune
+    if RETENTION_DAYS <= 0:
+        return
+    now_ts = datetime.utcnow().timestamp()
+    if now_ts - _last_prune < 3600:
+        return
+    cutoff = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
+    db.query(CodeAttempt).filter(CodeAttempt.created_at < cutoff).delete()
+    db.commit()
+    _last_prune = now_ts
+
+
 @app.get("/health", response_model=HealthResponse)
 def health():
     return HealthResponse(ok=True)
 
+
 @app.get("/adapters", response_model=AdaptersResponse)
 def get_adapters():
     return ADAPTERS
+
 
 @app.post("/scrape", response_model=ScrapeResponse)
 def scrape(req: ScrapeRequest, db: Session = Depends(get_db)):
     codes = scrape_pipeline(db, ADAPTERS, domain=req.domain, url=req.url, html=req.html, limit=req.limit)
     return ScrapeResponse(codes=codes)
 
+
 @app.post("/suggest", response_model=SuggestResponse)
 def suggest(req: SuggestRequest, db: Session = Depends(get_db)):
-    domain = req.domain.lower().replace("www.", "")
+    domain = _normalize_domain(req.domain)
 
     attempts = db.query(CodeAttempt)\
         .filter(CodeAttempt.domain == domain, CodeAttempt.success == True)\
@@ -73,6 +115,7 @@ def suggest(req: SuggestRequest, db: Session = Depends(get_db)):
             break
     return SuggestResponse(codes=merged[:req.limit])
 
+
 @app.post("/rank", response_model=RankResponse)
 def rank(req: RankRequest, db: Session = Depends(get_db)):
     domain = (req.domain or "").lower().replace("www.", "")
@@ -86,6 +129,7 @@ def rank(req: RankRequest, db: Session = Depends(get_db)):
         codes=[RankedCode(code=c, score=float(round(s,4)), reasons=r) for (c,s,r) in ranked],
         metadata={"domain": domain, "count": len(ranked)}
     )
+
 
 @app.post("/seed", dependencies=[Depends(require_api_key)])
 def seed_codes(req: SeedRequest, db: Session = Depends(get_db)):
@@ -104,14 +148,37 @@ def seed_codes(req: SeedRequest, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True, "added": added, "skipped": skipped}
 
+
 @app.post("/event")
 def log_event(req: EventRequest, db: Session = Depends(get_db), user_agent: str = Header(None)):
-    domain = req.domain.lower().replace("www.", "")
+    if req.opt_out:
+        return JSONResponse({"ok": False, "stored": False, "reason": "opt_out"}, status_code=202)
+
+    domain = _normalize_domain(req.domain)
+    if not domain:
+        raise HTTPException(status_code=400, detail="domain required")
+
+    code = (req.code or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="code required")
+
+    before_total = _round_currency(req.before_total)
+    after_total = _round_currency(req.after_total)
+    saved = _round_currency(req.saved)
+    if saved is None and before_total is not None and after_total is not None:
+        saved = _round_currency(max(0.0, before_total - after_total))
+
     attempt = CodeAttempt(
-        domain=domain, code=req.code.strip().upper(), success=bool(req.success),
-        saved=float(req.saved or 0.0), before_total=req.before_total, after_total=req.after_total,
-        user_agent=user_agent or ""
+        domain=domain,
+        code=code,
+        success=bool(req.success),
+        saved=float(saved or 0.0),
+        before_total=before_total,
+        after_total=after_total,
+        user_agent=(user_agent or "")[:255],
+        anon_id=_hash_anon(req.anon_id),
     )
     db.add(attempt)
     db.commit()
+    prune_old_attempts(db)
     return {"ok": True, "id": attempt.id}
