@@ -9,21 +9,8 @@ from dotenv import load_dotenv
 
 from db import Base, engine, get_db
 from models import CodeSeed, CodeAttempt, ScrapeCache
-from schemas import (
-    HealthResponse,
-    SuggestRequest,
-    SuggestResponse,
-    RankRequest,
-    RankResponse,
-    RankedCode,
-    SeedRequest,
-    EventRequest,
-    ScrapeRequest,
-    ScrapeResponse,
-    AdaptersResponse,
-    CatalogCoverageResponse,
-    CatalogRetailerResponse,
-)
+from schemas import (HealthResponse, SuggestRequest, SuggestResponse, RankRequest, RankResponse, RankedCode,
+                    SeedRequest, EventRequest, ScrapeRequest, ScrapeResponse, AdaptersResponse)
 from ranking import rank_codes
 from scraper import scrape_pipeline
 from auth import require_api_key
@@ -150,6 +137,7 @@ def catalog_detail(domain: str, db: Session = Depends(get_db)):
         inventory_count=bundle.get("inventory_count", 0),
         last_synced=bundle.get("last_synced").isoformat() if bundle.get("last_synced") else None,
     )
+
 
 
 @app.post("/scrape", response_model=ScrapeResponse)
