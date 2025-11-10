@@ -5,6 +5,8 @@ FastAPI backend with **server-side scraping** and **adapter-aware** suggestions.
 ## Endpoints
 - `GET /health`
 - `GET /adapters`
+- `GET /catalog/coverage` — summary of every active retailer plus inventory counts
+- `GET /catalog/{domain}` — selectors, heuristics, and curated inventory for a specific retailer
 - `POST /scrape` — accepts { domain, url?, html? } and returns codes
 - `POST /suggest` — seeds + successes + live scraping
 - `POST /rank` — returns ML scores, predicted savings, and best-use guidance
@@ -56,3 +58,20 @@ The services expect `PYTHON_BIN=python3` (configured in the blueprint) so that B
 - Light-touch scraping (≤ 6 pages, 7s timeout, 10m cache).
 - For SPA checkouts, send `html` to `/scrape` for better extraction.
 - Replace SQLite with Postgres via `DATABASE_URL`.
+
+## Retailer catalog ingestion
+
+To maintain promo coverage for thousands of retailers, ship a manifest of selectors, heuristics, and inventory into Postgres:
+
+```bash
+python scripts/sync_retailer_catalog.py path/to/catalog.json
+```
+
+The manifest can be JSON (with a top-level `retailers` array) or NDJSON. Each retailer entry supports:
+
+- `domain` / `domains`: canonical and alias domains (strings)
+- `name`: display name
+- `selectors`, `heuristics`, and `scrape`: JSON blobs that override scraping + checkout behavior
+- `inventory`: array of codes (`code`, `source`, `tags`, `metadata`, `expires_at`)
+
+Use `--drop-missing` to deactivate retailers absent from the latest sync. The ingestion job marks every touched retailer as active, updates selectors/heuristics, and reconciles inventory rows.

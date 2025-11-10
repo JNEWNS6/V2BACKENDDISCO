@@ -14,6 +14,13 @@ from schemas import (HealthResponse, SuggestRequest, SuggestResponse, RankReques
 from ranking import rank_codes
 from scraper import scrape_pipeline
 from auth import require_api_key
+from catalog import (
+    build_adapter_snapshot,
+    get_retailer_inventory,
+    get_retailer_overrides,
+    get_retailer_bundle,
+    list_supported_domains,
+)
 
 load_dotenv()
 
@@ -75,13 +82,68 @@ def health():
 
 
 @app.get("/adapters", response_model=AdaptersResponse)
-def get_adapters():
-    return ADAPTERS
+def get_adapters(db: Session = Depends(get_db)):
+    return build_adapter_snapshot(db, ADAPTERS)
+
+
+@app.get("/catalog/coverage", response_model=CatalogCoverageResponse)
+def catalog_coverage(db: Session = Depends(get_db)):
+    entries = list_supported_domains(db)
+    retailers = []
+    for entry in entries:
+        retailers.append({
+            "domain": entry["domain"],
+            "retailer": entry["name"],
+            "platform": entry.get("platform", "generic"),
+            "aliases": entry.get("aliases", []),
+            "regions": entry.get("regions", []),
+            "inventory": entry.get("inventory_count", 0),
+            "last_synced": entry.get("last_synced").isoformat() if entry.get("last_synced") else None,
+        })
+    return CatalogCoverageResponse(
+        total=len(retailers),
+        generated_at=datetime.utcnow().isoformat(),
+        retailers=retailers,
+    )
+
+
+@app.get("/catalog/{domain}", response_model=CatalogRetailerResponse)
+def catalog_detail(domain: str, db: Session = Depends(get_db)):
+    bundle = get_retailer_bundle(db, domain)
+    if not bundle:
+        raise HTTPException(status_code=404, detail="catalog entry not found")
+    inventory = []
+    for entry in bundle.get("inventory", []):
+        inventory.append({
+            "code": entry.get("code"),
+            "source": entry.get("source"),
+            "tags": entry.get("tags", []),
+            "attributes": entry.get("attributes", {}),
+            "first_seen": entry.get("first_seen").isoformat() if entry.get("first_seen") else None,
+            "last_seen": entry.get("last_seen").isoformat() if entry.get("last_seen") else None,
+            "expires_at": entry.get("expires_at").isoformat() if entry.get("expires_at") else None,
+        })
+    return CatalogRetailerResponse(
+        domain=bundle.get("domain"),
+        retailer=bundle.get("retailer"),
+        platform=bundle.get("platform", "generic"),
+        checkout_hints=bundle.get("checkout_hints", []),
+        selectors=bundle.get("selectors", {}),
+        heuristics=bundle.get("heuristics", {}),
+        scrape=bundle.get("scrape", {}),
+        regions=bundle.get("regions", []),
+        aliases=bundle.get("aliases", []),
+        inventory=inventory,
+        inventory_count=bundle.get("inventory_count", 0),
+        last_synced=bundle.get("last_synced").isoformat() if bundle.get("last_synced") else None,
+    )
+
 
 
 @app.post("/scrape", response_model=ScrapeResponse)
 def scrape(req: ScrapeRequest, db: Session = Depends(get_db)):
-    codes = scrape_pipeline(db, ADAPTERS, domain=req.domain, url=req.url, html=req.html, limit=req.limit)
+    overrides = get_retailer_overrides(db, req.domain)
+    codes = scrape_pipeline(db, ADAPTERS, domain=req.domain, url=req.url, html=req.html, limit=req.limit, overrides=overrides)
     return ScrapeResponse(codes=codes)
 
 
@@ -99,11 +161,13 @@ def suggest(req: SuggestRequest, db: Session = Depends(get_db)):
         .order_by(CodeSeed.created_at.desc()).limit(req.limit).all()
     seeds = [r.code for r in seed_rows]
 
-    scraped = scrape_pipeline(db, ADAPTERS, domain=domain, url=req.url, html=req.html, limit=req.limit)
+    overrides = get_retailer_overrides(db, domain)
+    scraped = scrape_pipeline(db, ADAPTERS, domain=domain, url=req.url, html=req.html, limit=req.limit, overrides=overrides)
+    catalog_inventory = [item.get("code") for item in get_retailer_inventory(db, domain, req.limit)]
 
     merged = []
     seen = set()
-    for lst in (recent_success, scraped, seeds):
+    for lst in (catalog_inventory, recent_success, scraped, seeds):
         for c in lst:
             cu = c.strip().upper()
             if cu and cu not in seen:

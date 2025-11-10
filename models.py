@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, UniqueConstraint, Index, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, UniqueConstraint, Index, Text, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
 from db import Base
 
@@ -33,3 +34,34 @@ class ScrapeCache(Base):
     codes_json = Column(Text)
     fetched_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("domain", "url", name="uq_scrape_domain_url"),)
+
+
+class RetailerProfile(Base):
+    __tablename__ = "retailer_profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String, unique=True, index=True, nullable=False)
+    retailer_name = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    selectors = Column(Text, default="{}")
+    heuristics = Column(Text, default="{}")
+    metadata = Column(Text, default="{}")
+    last_synced = Column(DateTime, nullable=True)
+    inventory = relationship("RetailerInventory", back_populates="retailer", cascade="all, delete-orphan")
+
+
+class RetailerInventory(Base):
+    __tablename__ = "retailer_inventory"
+    id = Column(Integer, primary_key=True, index=True)
+    retailer_id = Column(Integer, ForeignKey("retailer_profiles.id", ondelete="CASCADE"), index=True, nullable=False)
+    code = Column(String, nullable=False)
+    source = Column(String, nullable=True)
+    tags = Column(Text, default="[]")
+    attributes = Column(Text, default="{}")
+    first_seen = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+    retailer = relationship("RetailerProfile", back_populates="inventory")
+    __table_args__ = (
+        UniqueConstraint("retailer_id", "code", name="uq_inventory_retailer_code"),
+        Index("ix_inventory_retailer_last_seen", "retailer_id", "last_seen"),
+    )

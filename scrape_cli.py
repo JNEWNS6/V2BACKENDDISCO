@@ -7,6 +7,7 @@ from db import get_db
 from ranking import rank_codes
 from scraper import scrape_pipeline
 from schemas import ScrapeRequest
+from catalog import build_adapter_snapshot, get_retailer_overrides
 from urllib.robotparser import RobotFileParser
 from urllib.parse import urljoin
 
@@ -35,9 +36,9 @@ def main():
     # Load adapters if present
     ADAPTERS = None
     try:
-        p = pathlib.Path('adapters/retailers.json')
-        if p.exists():
-            ADAPTERS = json.loads(p.read_text())
+        base_path = pathlib.Path('adapters.json')
+        if base_path.exists():
+            ADAPTERS = json.loads(base_path.read_text())
     except Exception:
         ADAPTERS = None
 
@@ -53,12 +54,23 @@ def main():
 
     db_gen = get_db(); db: Session = next(db_gen)
     try:
+        adapters_snapshot = build_adapter_snapshot(db, ADAPTERS or {"platforms": {}, "retailers": []})
+
         if op == 'codes':
             domain = (payload.get('domain') or '')
             url = payload.get('url')
             html = payload.get('html')
             limit = int(payload.get('limit') or 50)
-            codes: List[str] = scrape_pipeline(db, ADAPTERS, domain=domain, url=url, html=html, limit=limit)
+            overrides = get_retailer_overrides(db, domain)
+            codes: List[str] = scrape_pipeline(
+                db,
+                adapters_snapshot,
+                domain=domain,
+                url=url,
+                html=html,
+                limit=limit,
+                overrides=overrides,
+            )
             print(json.dumps({'codes': codes})); sys.exit(0)
         elif op == 'rank':
             domain = (payload.get('domain') or '')
