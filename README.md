@@ -7,7 +7,7 @@ FastAPI backend with **server-side scraping** and **adapter-aware** suggestions.
 - `GET /adapters`
 - `POST /scrape` — accepts { domain, url?, html? } and returns codes
 - `POST /suggest` — seeds + successes + live scraping
-- `POST /rank` — scores codes (success, recency, avg saved, priors)
+- `POST /rank` — returns ML scores, predicted savings, and best-use guidance
 - `POST /seed` — add seed codes (Bearer `DISCO_API_KEY`)
 - `POST /event` — log attempts (hashed anon IDs, opt-out aware)
 
