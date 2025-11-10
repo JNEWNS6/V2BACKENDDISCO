@@ -199,18 +199,11 @@ router.post('/rank', rankLimiter, async (req, res) => {
     res.json({
       domain,
       generatedAt: new Date().toISOString(),
-      rankings: ranked.map(item => {
-        const meta = item.meta || {};
-        const score = typeof item.score === 'number' ? item.score : Number(item.score || 0);
-        return {
-          code: normalizeCode(item.code),
-          score,
-          predictedSavings: typeof meta.predicted_savings === 'number' ? meta.predicted_savings : null,
-          confidence: typeof meta.confidence === 'number' ? meta.confidence : null,
-          bestForCartTotal: typeof meta.best_for_total === 'number' ? meta.best_for_total : null,
-          metadata: meta,
-        };
-      }),
+      rankings: ranked.map(item => ({
+        code: normalizeCode(item.code),
+        score: typeof item.score === 'number' ? item.score : Number(item.score || 0),
+        metadata: item.meta || {},
+      })),
     });
   } catch (err) {
     res.status(502).json({ error: err.message });

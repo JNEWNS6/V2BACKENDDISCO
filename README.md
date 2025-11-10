@@ -15,7 +15,7 @@ FastAPI backend with **server-side scraping** and **adapter-aware** suggestions.
 The bundled Express service (`server.js`) mirrors these core capabilities for the production stack:
 
 - `POST /suggest` returns deduplicated codes with source metadata by merging recent successes, live scraping results, and seeded catalogs per domain.
-- `POST /rank` delegates to the Python ranking pipeline to return machine-learned scores, predicted savings, and best-cart guidance for each candidate code.
+- `POST /rank` delegates to the Python ranking pipeline to return machine-learned scores and feature metadata for each candidate code.
 - `POST /event` ingests checkout telemetry with hashed anonymous IDs, currency rounding, retention pruning, and opt-out controls. Events feed ranking/training jobs while honoring privacy commitments.
 
 Set `CODE_EVENT_RETENTION_DAYS` to tune how long outcome telemetry is retained (default 180 days). All endpoints normalize domains (lowercase, strip protocol/`www.`) so the extension can call them with retailer URLs directly.
