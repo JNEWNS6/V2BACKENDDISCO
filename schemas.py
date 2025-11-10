@@ -38,6 +38,8 @@ class EventRequest(BaseModel):
     saved: float = 0.0
     before_total: Optional[float] = None
     after_total: Optional[float] = None
+    anon_id: Optional[str] = None
+    opt_out: Optional[bool] = False
 
 class ScrapeRequest(BaseModel):
     domain: str
