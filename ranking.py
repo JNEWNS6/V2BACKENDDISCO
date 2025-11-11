@@ -1,24 +1,14 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Tuple
 from sqlalchemy.orm import Session
-from models import CodeAttempt, CodeSeed
+from models import CodeSeed
+from telemetry import aggregate_success_metrics
 
 def _domain_key(domain: str) -> str:
     return (domain or "").lower().replace("www.", "")
 
 def _success_stats(db: Session, domain: str) -> Dict[str, Dict[str, float]]:
-    stats: Dict[str, Dict[str, float]] = {}
-    cutoff_90 = datetime.utcnow() - timedelta(days=90)
-    rows = db.query(CodeAttempt).filter(CodeAttempt.domain == _domain_key(domain),
-                                        CodeAttempt.created_at >= cutoff_90).all()
-    for r in rows:
-        s = stats.setdefault(r.code, {"n":0,"ok":0,"avg_saved":0.0,"last":0.0})
-        s["n"] += 1
-        if r.success or (r.saved or 0) > 0:
-            s["ok"] += 1
-        s["avg_saved"] = ((s["avg_saved"] * (s["n"]-1)) + (r.saved or 0)) / s["n"]
-        s["last"] = max(s["last"], r.created_at.timestamp())
-    return stats
+    return aggregate_success_metrics(db, domain=_domain_key(domain))
 
 def rank_codes(db: Session, domain: str, candidates: List[str]) -> List[Tuple[str, float, Dict]]:
     dom = _domain_key(domain)
