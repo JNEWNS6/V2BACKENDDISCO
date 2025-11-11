@@ -1,5 +1,5 @@
-import os, json
-from datetime import datetime
+import os, json, hashlib
+from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,25 +9,11 @@ from dotenv import load_dotenv
 
 from db import Base, engine, get_db
 from models import CodeSeed, CodeAttempt, ScrapeCache
-from schemas import (
-    HealthResponse,
-    SuggestRequest,
-    SuggestResponse,
-    RankRequest,
-    RankResponse,
-    RankedCode,
-    SeedRequest,
-    EventRequest,
-    ScrapeRequest,
-    ScrapeResponse,
-    AdaptersResponse,
-    CatalogCoverageResponse,
-    CatalogRetailerResponse,
-)
+from schemas import (HealthResponse, SuggestRequest, SuggestResponse, RankRequest, RankResponse, RankedCode,
+                    SeedRequest, EventRequest, ScrapeRequest, ScrapeResponse, AdaptersResponse)
 from ranking import rank_codes
 from scraper import scrape_pipeline
 from auth import require_api_key
-from telemetry import record_attempt
 from catalog import (
     build_adapter_snapshot,
     get_retailer_inventory,
@@ -54,8 +40,40 @@ Base.metadata.create_all(bind=engine)
 with open(os.path.join(os.path.dirname(__file__), "adapters.json"), "r") as f:
     ADAPTERS = json.load(f)
 
+RETENTION_DAYS = int(os.getenv("CODE_EVENT_RETENTION_DAYS", "180") or 0)
+_last_prune = 0.0
+
+
 def _normalize_domain(domain: str) -> str:
     return (domain or "").strip().lower().replace("http://", "").replace("https://", "").replace("www.", "")
+
+
+def _round_currency(value):
+    if value is None:
+        return None
+    try:
+        return round(float(value), 2)
+    except (ValueError, TypeError):
+        return None
+
+
+def _hash_anon(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    return hashlib.sha256(value.strip().encode("utf-8")).hexdigest()
+
+
+def prune_old_attempts(db: Session):
+    global _last_prune
+    if RETENTION_DAYS <= 0:
+        return
+    now_ts = datetime.utcnow().timestamp()
+    if now_ts - _last_prune < 3600:
+        return
+    cutoff = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
+    db.query(CodeAttempt).filter(CodeAttempt.created_at < cutoff).delete()
+    db.commit()
+    _last_prune = now_ts
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -119,6 +137,7 @@ def catalog_detail(domain: str, db: Session = Depends(get_db)):
         inventory_count=bundle.get("inventory_count", 0),
         last_synced=bundle.get("last_synced").isoformat() if bundle.get("last_synced") else None,
     )
+
 
 
 @app.post("/scrape", response_model=ScrapeResponse)
@@ -207,15 +226,23 @@ def log_event(req: EventRequest, db: Session = Depends(get_db), user_agent: str 
     if not code:
         raise HTTPException(status_code=400, detail="code required")
 
-    attempt = record_attempt(
-        db,
+    before_total = _round_currency(req.before_total)
+    after_total = _round_currency(req.after_total)
+    saved = _round_currency(req.saved)
+    if saved is None and before_total is not None and after_total is not None:
+        saved = _round_currency(max(0.0, before_total - after_total))
+
+    attempt = CodeAttempt(
         domain=domain,
         code=code,
         success=bool(req.success),
-        before_total=req.before_total,
-        after_total=req.after_total,
-        saved=req.saved,
-        anon_id=req.anon_id,
-        user_agent=user_agent,
+        saved=float(saved or 0.0),
+        before_total=before_total,
+        after_total=after_total,
+        user_agent=(user_agent or "")[:255],
+        anon_id=_hash_anon(req.anon_id),
     )
+    db.add(attempt)
+    db.commit()
+    prune_old_attempts(db)
     return {"ok": True, "id": attempt.id}

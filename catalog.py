@@ -84,7 +84,7 @@ def upsert_retailer_profile(db: Session, payload: Dict[str, Any]) -> RetailerPro
 
     profile.selectors = _dumps(selectors)
     profile.heuristics = _dumps(heuristics)
-    profile.retailer_metadata = _dumps(metadata)
+    profile.metadata = _dumps(metadata)
     profile.last_synced = datetime.utcnow()
 
     existing = {inv.code.upper(): inv for inv in profile.inventory}
@@ -153,7 +153,7 @@ def list_supported_domains(db: Session) -> List[Dict[str, Any]]:
     rows = db.query(RetailerProfile).filter(RetailerProfile.active == True).all()
     result: List[Dict[str, Any]] = []
     for row in rows:
-        metadata = _loads(row.retailer_metadata, {})
+        metadata = _loads(row.metadata, {})
         entry = {
             "domain": row.domain,
             "name": row.retailer_name,
@@ -184,7 +184,7 @@ def get_retailer_bundle(db: Session, domain: str) -> Optional[Dict[str, Any]]:
     )
     if not profile:
         return None
-    metadata = _loads(profile.retailer_metadata, {})
+    metadata = _loads(profile.metadata, {})
     selectors = _loads(profile.selectors, {})
     heuristics = _loads(profile.heuristics, {})
     inventory_rows = (

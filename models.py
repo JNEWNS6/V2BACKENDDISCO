@@ -44,7 +44,7 @@ class RetailerProfile(Base):
     active = Column(Boolean, default=True)
     selectors = Column(Text, default="{}")
     heuristics = Column(Text, default="{}")
-    retailer_metadata = Column("metadata", Text, default="{}")
+    metadata = Column(Text, default="{}")
     last_synced = Column(DateTime, nullable=True)
     inventory = relationship("RetailerInventory", back_populates="retailer", cascade="all, delete-orphan")
 

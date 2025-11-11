@@ -27,16 +27,6 @@ function normalizeCode(code) {
     .toUpperCase();
 }
 
-function parseJSON(value, fallback) {
-  if (!value) return fallback;
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    return fallback;
-  }
-}
-
 function clampLimit(value, fallback, max = 50) {
   const num = Number.parseInt(value, 10);
   if (!Number.isFinite(num) || num <= 0) return fallback;
@@ -126,33 +116,6 @@ async function fetchScraped(domain, url, html, limit) {
     .filter(item => !!item.code);
 }
 
-async function fetchCatalogInventory(domain, limit) {
-  const { rows } = await pool.query(
-    `SELECT i.code, i.source, i.tags, i.attributes, i.last_seen, i.expires_at
-       FROM retailer_inventory i
-       JOIN retailer_profiles r ON r.id = i.retailer_id
-      WHERE r.domain=$1 AND r.active=true
-      ORDER BY i.last_seen DESC
-      LIMIT $2`,
-    [domain, limit]
-  );
-  return rows
-    .map(row => ({
-      code: normalizeCode(row.code),
-      source: row.source || 'catalog',
-      metadata: {
-        tags: Array.isArray(row.tags) ? row.tags : parseJSON(row.tags, []),
-        attributes:
-          row.attributes && typeof row.attributes === 'object'
-            ? row.attributes
-            : parseJSON(row.attributes, {}),
-        lastSeen: row.last_seen ? new Date(row.last_seen).toISOString() : null,
-        expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
-      },
-    }))
-    .filter(item => !!item.code);
-}
-
 function mergeCandidates(limit, ...lists) {
   const merged = [];
   const seen = new Set();
@@ -187,14 +150,13 @@ router.post('/suggest', suggestLimiter, async (req, res) => {
   try {
     await pruneOldEvents();
 
-    const [inventory, successes, scraped, seeds] = await Promise.all([
-      fetchCatalogInventory(domain, limit),
+    const [successes, scraped, seeds] = await Promise.all([
       fetchRecentSuccess(domain, limit),
       fetchScraped(domain, url, html, limit),
       fetchSeeds(domain, limit),
     ]);
 
-    const merged = mergeCandidates(limit, inventory, successes, scraped, seeds);
+    const merged = mergeCandidates(limit, successes, scraped, seeds);
     res.json({
       domain,
       limit,
@@ -237,18 +199,11 @@ router.post('/rank', rankLimiter, async (req, res) => {
     res.json({
       domain,
       generatedAt: new Date().toISOString(),
-      rankings: ranked.map(item => {
-        const meta = item.meta || {};
-        const score = typeof item.score === 'number' ? item.score : Number(item.score || 0);
-        return {
-          code: normalizeCode(item.code),
-          score,
-          predictedSavings: typeof meta.predicted_savings === 'number' ? meta.predicted_savings : null,
-          confidence: typeof meta.confidence === 'number' ? meta.confidence : null,
-          bestForCartTotal: typeof meta.best_for_total === 'number' ? meta.best_for_total : null,
-          metadata: meta,
-        };
-      }),
+      rankings: ranked.map(item => ({
+        code: normalizeCode(item.code),
+        score: typeof item.score === 'number' ? item.score : Number(item.score || 0),
+        metadata: item.meta || {},
+      })),
     });
   } catch (err) {
     res.status(502).json({ error: err.message });

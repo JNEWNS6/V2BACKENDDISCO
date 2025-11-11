@@ -8,7 +8,6 @@ import adminRouter, { requireAdmin } from './adminRouter.js';
 import paymentsRouter from './paymentsRouter.js';
 import publicCodesRouter from './publicCodesRouter.js';
 import promoIntelligenceRouter from './promoIntelligenceRouter.js';
-import catalogRouter from './catalogRouter.js';
 if (process.env.START_QUEUE_IN_WEB !== 'false') {
   await import('./queue.js');
 }
@@ -19,7 +18,6 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '1mb' }));
 
 app.use('/', promoIntelligenceRouter);
-app.use('/', catalogRouter);
 app.use('/', publicCodesRouter);
 
 const __filename = fileURLToPath(import.meta.url);

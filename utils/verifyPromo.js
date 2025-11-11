@@ -1,6 +1,52 @@
-import { runScraperOp } from './pythonCli.js';
+import { spawn } from 'child_process';
 
+const PYTHON_BIN = process.env.PYTHON_BIN || 'python3';
 const VERIFY_LIMIT = Number(process.env.VERIFY_PROMO_SCRAPE_LIMIT || 50);
+
+function runPython(op, payload) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(PYTHON_BIN, ['scrape_cli.py', op], {
+      cwd: process.cwd(),
+      env: process.env,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', chunk => {
+      stdout += chunk.toString();
+    });
+
+    proc.stderr.on('data', chunk => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('error', reject);
+
+    proc.on('close', code => {
+      if (code === 0) {
+        try {
+          const json = JSON.parse(stdout || '{}');
+          resolve(json);
+        } catch (err) {
+          reject(new Error(`Invalid JSON from scraper: ${err.message}`));
+        }
+      } else {
+        const message = stderr || stdout || `exit ${code}`;
+        resolve({ error: message });
+      }
+    });
+
+    try {
+      proc.stdin.write(JSON.stringify(payload || {}));
+    } catch (err) {
+      proc.kill('SIGTERM');
+      reject(err);
+      return;
+    }
+    proc.stdin.end();
+  });
+}
 
 function normalizeDomain(domain) {
   return String(domain || '')
@@ -44,7 +90,7 @@ export async function verifyPromo(domain, code) {
   }
 
   try {
-    const { codes: scrapedCodes = [], error } = await runScraperOp('codes', {
+    const { codes: scrapedCodes = [], error } = await runPython('codes', {
       domain: normalizedDomain,
       limit: VERIFY_LIMIT,
     });
