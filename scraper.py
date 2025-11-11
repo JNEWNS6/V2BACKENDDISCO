@@ -1,5 +1,5 @@
 import os, re, json
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from urllib.parse import urljoin
 import requests
 from lxml import html as lh
@@ -77,13 +77,25 @@ def cached_fetch(db: Session, domain: str, url: str, token_re: str, keywords: Li
     db.commit()
     return codes
 
-def scrape_pipeline(db: Session, adapters: Dict, domain: str, url: Optional[str]=None, html: Optional[str]=None, limit: int=50) -> List[str]:
+def scrape_pipeline(
+    db: Session,
+    adapters: Optional[Dict],
+    domain: str,
+    url: Optional[str]=None,
+    html: Optional[str]=None,
+    limit: int=50,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> List[str]:
     dom = normalize_domain(domain)
-    plat = adapters["platforms"]["generic"]
-    sconf = plat.get("scrape", {})
-    token_re = sconf.get("token_re", r"[A-Z0-9][A-Z0-9\-]{4,14}")
-    keywords = sconf.get("keywords", [])
-    stop = sconf.get("stop", [])
+    overrides = overrides or {}
+    platforms = (adapters or {}).get("platforms", {})
+    platform_key = overrides.get("platform") or "generic"
+    plat = platforms.get(platform_key) or platforms.get("generic", {})
+    sconf = plat.get("scrape", {}) if isinstance(plat, dict) else {}
+    domain_scrape = overrides.get("scrape") if isinstance(overrides.get("scrape"), dict) else {}
+    token_re = domain_scrape.get("token_re") or sconf.get("token_re", r"[A-Z0-9][A-Z0-9\-]{4,14}")
+    keywords = domain_scrape.get("keywords") or sconf.get("keywords", [])
+    stop = domain_scrape.get("stop") or sconf.get("stop", [])
 
     if html:
         return scrape_from_html(html, token_re, keywords, stop)[:limit]
@@ -92,7 +104,7 @@ def scrape_pipeline(db: Session, adapters: Dict, domain: str, url: Optional[str]
     urls = []
     if url:
         urls.append(url)
-    paths = sconf.get("paths", ["/", "/sale", "/offers", "/promo", "/promotions", "/discount", "/voucher", "/vouchers"])
+    paths = domain_scrape.get("paths") or sconf.get("paths", ["/", "/sale", "/offers", "/promo", "/promotions", "/discount", "/voucher", "/vouchers"])
     for base in roots:
         for p in paths:
             urls.append(urljoin(base, p))

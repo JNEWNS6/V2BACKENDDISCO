@@ -38,6 +38,8 @@ class EventRequest(BaseModel):
     saved: float = 0.0
     before_total: Optional[float] = None
     after_total: Optional[float] = None
+    anon_id: Optional[str] = None
+    opt_out: Optional[bool] = False
 
 class ScrapeRequest(BaseModel):
     domain: str
@@ -51,3 +53,44 @@ class ScrapeResponse(BaseModel):
 class AdaptersResponse(BaseModel):
     platforms: Dict[str, Any]
     retailers: List[Dict[str, Any]]
+
+
+class CatalogRetailerSummary(BaseModel):
+    domain: str
+    retailer: str
+    platform: str
+    aliases: List[str] = []
+    regions: List[str] = []
+    inventory: int = 0
+    last_synced: Optional[str] = None
+
+
+class CatalogInventoryEntry(BaseModel):
+    code: str
+    source: Optional[str] = None
+    tags: List[str] = []
+    attributes: Dict[str, Any] = {}
+    first_seen: Optional[str] = None
+    last_seen: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+class CatalogRetailerResponse(BaseModel):
+    domain: str
+    retailer: str
+    platform: str
+    checkout_hints: List[str] = []
+    selectors: Dict[str, Any] = {}
+    heuristics: Dict[str, Any] = {}
+    scrape: Dict[str, Any] = {}
+    regions: List[str] = []
+    aliases: List[str] = []
+    inventory: List[CatalogInventoryEntry] = []
+    inventory_count: int = 0
+    last_synced: Optional[str] = None
+
+
+class CatalogCoverageResponse(BaseModel):
+    total: int
+    generated_at: str
+    retailers: List[CatalogRetailerSummary]
